@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quorum · Harbourline night desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,560;6..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <a class="skip" href="#file">Skip to the file</a>
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">Q</span>
+      <div>
+        <p class="word">Quorum</p>
+        <p class="where">Harbourline · night desk · Singapore</p>
+      </div>
+    </div>
+    <nav class="views" aria-label="Desk or customer">
+      <button type="button" id="show-desk" class="on">Night desk</button>
+      <button type="button" id="show-customer">Customer thread</button>
+    </nav>
+    <p class="stack" id="stack">Gemini · Firestore · Cloud Run</p>
+  </header>
+
+  <div id="desk" class="desk">
+    <section class="queue" aria-label="Alert queue">
+      <header class="colhead">
+        <h1>Tonight's queue</h1>
+        <p id="portfolio">Nothing filed yet.</p>
+      </header>
+      <ul id="queue"></ul>
+    </section>
+
+    <article class="paper" id="file" tabindex="-1">
+      <p class="empty" id="empty">Choose a file. The quorum sits only when you convene it.</p>
+      <div id="file-body" hidden></div>
+    </article>
+
+    <aside class="bench" aria-label="Quorum">
+      <h2>The quorum</h2>
+      <div class="ring" id="ring">
+        <span class="hub" id="stamp">Waiting</span>
+        <button type="button" class="seat" data-seat="clerk" style="--a: -90deg">Clerk</button>
+        <button type="button" class="seat" data-seat="ledger" style="--a: -30deg">Ledger</button>
+        <button type="button" class="seat" data-seat="archivist" style="--a: 30deg">Archivist</button>
+        <button type="button" class="seat" data-seat="statute" style="--a: 90deg">Statute</button>
+        <button type="button" class="seat" data-seat="counsel" style="--a: 150deg">Counsel</button>
+        <button type="button" class="seat" data-seat="magistrate" style="--a: 210deg">Magistrate</button>
+      </div>
+      <ol class="minutes" id="minutes"></ol>
+      <div class="actions" id="actions" hidden>
+        <button type="button" id="file-decision">File this disposition</button>
+        <label>Override
+          <select id="override">
+            <option value="clear">Release</option>
+            <option value="hold">Hold</option>
+            <option value="escalate">Escalate</option>
+            <option value="split">Split</option>
+          </select>
+        </label>
+        <button type="button" id="apply-override">File the override</button>
+        <label class="note">Note for the docket
+          <textarea id="note" rows="2"></textarea>
+        </label>
+      </div>
+    </aside>
+  </div>
+
+  <section id="customer" class="customer" hidden>
+    <div class="phone">
+      <p class="appname">Harbourline</p>
+      <p class="thread-kicker" id="thread-kicker">What the customer sees</p>
+      <h2 id="thread-title">No note has been filed.</h2>
+      <p id="thread-body">File a disposition on the night desk and the same words appear here, without the case jargon.</p>
+      <label class="picker">Show the thread for
+        <select id="thread-pick"></select>
+      </label>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
