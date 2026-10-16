@@ -1,12 +1,19 @@
 """Synthetic Harbourline files. Public, invented, and safe to show a judge.
 
-Nothing here is a real customer. The shapes match the cases a night desk
-actually argues: a live push-payment scam, a seasonal remittance that looks
-like structuring, a mispriced metal invoice, a claim with twin invoices,
-and a payroll that shares an account with the scam.
+Nothing here is a real customer or a real counterparty. The shapes match the
+cases a night desk actually argues: a live push-payment scam, a seasonal
+remittance that looks like structuring, a romance scam draining a pension, an
+over-invoiced metal shipment, a claim with twin invoices, a payroll that shares
+an account with the scam, a sanctions name match that is the wrong man, and a
+SIM-swap takeover at three in the morning.
+
+Every transaction and document carries an id. The magistrate may only cite ids
+that exist here or in a tool result; the verifier strikes anything else.
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
 
 ALERTS: list[dict] = [
     {
@@ -14,12 +21,15 @@ ALERTS: list[dict] = [
         "opened": "2026-10-15T22:41:00+08:00",
         "urgency": "live",
         "customer": {
+            "id": "C-10021",
             "name": "Priya Nair",
             "segment": "Everyday",
             "age": 34,
             "city": "Singapore",
             "tenure_years": 6,
             "occupation": "School administrator",
+            "language": "en",
+            "device": {"on_call": True, "caller": "+65 8xxx 1932, unknown number", "call_minutes": 23},
         },
         "product": "Payments",
         "amount": 18600,
@@ -32,27 +42,17 @@ ALERTS: list[dict] = [
             "says she was told not to tell the bank."
         ),
         "transactions": [
-            {"at": "22:32", "direction": "out", "amount": 200, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "test"},
-            {"at": "22:36", "direction": "out", "amount": 8400, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "safe account do not reverse"},
-            {"at": "22:40", "direction": "out", "amount": 10000, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "as instructed on the phone"},
-        ],
-        "history": [
-            {"month": "2026-09", "typical_out": 2400, "new_payees": 0},
-            {"month": "2026-08", "typical_out": 2100, "new_payees": 1},
+            {"id": "T1", "at": "22:32", "ts": "2026-10-15T22:32:00+08:00", "direction": "out", "amount": 200, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "test"},
+            {"id": "T2", "at": "22:36", "ts": "2026-10-15T22:36:00+08:00", "direction": "out", "amount": 8400, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "safe account do not reverse"},
+            {"id": "T3", "at": "22:40", "ts": "2026-10-15T22:40:00+08:00", "direction": "out", "amount": 10000, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "as instructed on the phone"},
         ],
         "counterparties": [
-            {
-                "name": "Kelvin Ong",
-                "account": "041-883921",
-                "opened_days_ago": 6,
-                "relationship_on_file": "none",
-                "other_customers_today": 4,
-                "salary_credits": 0,
-            }
+            {"name": "Kelvin Ong", "account": "041-883921", "bank": "Harbourline", "opened_days_ago": 6, "relationship_on_file": "none"},
         ],
         "documents": [
             {"id": "note-1", "kind": "payment note", "detail": "Customer typed: they said do not tell the bank, this is the secure account."},
             {"id": "kyc-1", "kind": "KYC", "detail": "Priya Nair, enhanced due diligence not required, address unchanged since 2021, no prior scam report."},
+            {"id": "dev-1", "kind": "session log", "detail": "Payments made from her usual phone while a voice call was active for 23 minutes. Caller number is not in her contacts."},
         ],
         "links": [],
     },
@@ -61,17 +61,19 @@ ALERTS: list[dict] = [
         "opened": "2026-10-15T16:05:00+08:00",
         "urgency": "queue",
         "customer": {
+            "id": "C-10388",
             "name": "Pemba Sherpa",
             "segment": "Everyday",
             "age": 41,
             "city": "Singapore",
             "tenure_years": 9,
             "occupation": "Site supervisor, Keong Construction",
+            "language": "ne",
         },
         "product": "Remittance",
         "amount": 27500,
         "currency": "SGD",
-        "rule": "Three credits just under the internal SGD 10,000 threshold",
+        "rule": "Three transfers just under the internal SGD 10,000 threshold",
         "summary": (
             "Pemba has sent about SGD 800 a month to his sister in Kathmandu "
             "for four years. This week he sent three larger transfers on "
@@ -79,23 +81,12 @@ ALERTS: list[dict] = [
             "Dashain and a surgery at Bir Hospital."
         ),
         "transactions": [
-            {"at": "13 Oct", "direction": "out", "amount": 9500, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "Nabil 0044192", "narrative": "Dashain and Anita surgery Bir Hospital"},
-            {"at": "14 Oct", "direction": "out", "amount": 9200, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "Nabil 0044192", "narrative": "hospital balance Bir"},
-            {"at": "15 Oct", "direction": "out", "amount": 8800, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "Nabil 0044192", "narrative": "Dashain family"},
-        ],
-        "history": [
-            {"month": "2026-09", "typical_out": 800, "new_payees": 0},
-            {"month": "2025-10", "typical_out": 2200, "new_payees": 0},
+            {"id": "T1", "at": "13 Oct", "ts": "2026-10-13T12:10:00+08:00", "direction": "out", "amount": 9500, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "KUB 0044192", "narrative": "Dashain and Anita surgery Bir Hospital"},
+            {"id": "T2", "at": "14 Oct", "ts": "2026-10-14T12:22:00+08:00", "direction": "out", "amount": 9200, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "KUB 0044192", "narrative": "hospital balance Bir"},
+            {"id": "T3", "at": "15 Oct", "ts": "2026-10-15T15:58:00+08:00", "direction": "out", "amount": 8800, "currency": "SGD", "counterparty": "Anita Sherpa", "account": "KUB 0044192", "narrative": "Dashain family"},
         ],
         "counterparties": [
-            {
-                "name": "Anita Sherpa",
-                "account": "Nabil 0044192",
-                "opened_days_ago": None,
-                "relationship_on_file": "sister, beneficiary since March 2022",
-                "other_customers_today": 0,
-                "salary_credits": None,
-            }
+            {"name": "Anita Sherpa", "account": "KUB 0044192", "bank": "Kathmandu Union Bank", "opened_days_ago": None, "relationship_on_file": "sister, beneficiary since March 2022"},
         ],
         "documents": [
             {"id": "emp-1", "kind": "employer letter", "detail": "Keong Construction, 12 Sep 2026: Pemba Sherpa promoted to site supervisor, monthly salary SGD 4,800."},
@@ -108,36 +99,35 @@ ALERTS: list[dict] = [
         "opened": "2026-10-15T11:20:00+08:00",
         "urgency": "queue",
         "customer": {
+            "id": "C-10544",
             "name": "Meera Iyer",
             "segment": "Priority",
             "age": 67,
             "city": "Singapore",
             "tenure_years": 11,
             "occupation": "Retired teacher",
+            "language": "en",
         },
         "product": "Savings",
-        "amount": 48200,
+        "amount": 47800,
         "currency": "SGD",
         "rule": "Pension customer, rapid outward to new payees",
         "summary": (
             "Meera's pension credit is SGD 3,200 a month. In two days she sent "
             "most of her savings to a payee she added yesterday, then onward "
-            "toward a Manila cash outlet and a Philippine e-wallet. She told "
-            "the call centre a friend is helping her invest."
+            "toward a Manila cash pickup outlet and a Philippine e-wallet. She "
+            "told the call centre a friend is helping her invest."
         ),
         "transactions": [
-            {"at": "14 Oct 19:10", "direction": "in", "amount": 500, "currency": "SGD", "counterparty": "Jonathan Wei", "account": "DBS 2291", "narrative": "for the tickets my love"},
-            {"at": "15 Oct 09:02", "direction": "out", "amount": 19800, "currency": "SGD", "counterparty": "Jonathan Wei", "account": "DBS 2291", "narrative": "investment tranche"},
-            {"at": "15 Oct 09:40", "direction": "out", "amount": 18400, "currency": "SGD", "counterparty": "M Lhuillier Manila", "account": "cash-4401", "narrative": "collection"},
-            {"at": "15 Oct 10:05", "direction": "out", "amount": 9600, "currency": "SGD", "counterparty": "QuickWallet PH", "account": "wallet-88", "narrative": "top up"},
-        ],
-        "history": [
-            {"month": "2026-09", "typical_out": 1900, "new_payees": 0},
-            {"month": "2026-08", "typical_out": 1700, "new_payees": 0},
+            {"id": "T1", "at": "14 Oct 19:10", "ts": "2026-10-14T19:10:00+08:00", "direction": "in", "amount": 500, "currency": "SGD", "counterparty": "Jonathan Wei", "account": "SMB 2291", "narrative": "for the tickets my love", "state": "posted"},
+            {"id": "T2", "at": "15 Oct 09:02", "ts": "2026-10-15T09:02:00+08:00", "direction": "out", "amount": 19800, "currency": "SGD", "counterparty": "Jonathan Wei", "account": "SMB 2291", "narrative": "investment tranche"},
+            {"id": "T3", "at": "15 Oct 09:40", "ts": "2026-10-15T09:40:00+08:00", "direction": "out", "amount": 18400, "currency": "SGD", "counterparty": "Tondo Cash Pickup", "account": "cash-4401", "narrative": "collection"},
+            {"id": "T4", "at": "15 Oct 10:05", "ts": "2026-10-15T10:05:00+08:00", "direction": "out", "amount": 9600, "currency": "SGD", "counterparty": "QuickWallet PH", "account": "wallet-88", "narrative": "top up"},
         ],
         "counterparties": [
-            {"name": "Jonathan Wei", "account": "DBS 2291", "opened_days_ago": 1, "relationship_on_file": "none", "other_customers_today": 0, "salary_credits": None},
-            {"name": "M Lhuillier Manila", "account": "cash-4401", "opened_days_ago": 1, "relationship_on_file": "none", "other_customers_today": 2, "salary_credits": None},
+            {"name": "Jonathan Wei", "account": "SMB 2291", "bank": "Straits Mutual Bank", "opened_days_ago": 1, "relationship_on_file": "none"},
+            {"name": "Tondo Cash Pickup", "account": "cash-4401", "bank": "cash agent, Manila", "opened_days_ago": 1, "relationship_on_file": "none"},
+            {"name": "QuickWallet PH", "account": "wallet-88", "bank": "e-wallet, Philippines", "opened_days_ago": None, "relationship_on_file": "none"},
         ],
         "documents": [
             {"id": "call-1", "kind": "call note", "detail": "15 Oct 10:22. Meera said Jonathan is a friend she met online in August and he is helping her invest. She did not want a branch appointment."},
@@ -150,45 +140,38 @@ ALERTS: list[dict] = [
         "opened": "2026-10-14T18:12:00+08:00",
         "urgency": "queue",
         "customer": {
+            "id": "C-20017",
             "name": "Northspan Metals Pte Ltd",
             "segment": "Trade",
             "age": None,
             "city": "Singapore",
             "tenure_years": 7,
             "occupation": "Non-ferrous metal trader",
+            "language": "en",
         },
         "product": "Trade payment",
-        "amount": 1240000,
+        "amount": 1560000,
         "currency": "USD",
         "rule": "Invoice unit price outside the commodity band",
         "summary": (
             "Northspan asked Harbourline to pay invoice INV-8841 for 400 metric "
-            "tons of copper cathode at USD 1,240,000. The bank's commodity band "
-            "for cathode this week is USD 1,800 to 2,100 per ton. The bill of "
-            "lading shows 398 tons. The buyer was incorporated in Labuan 42 days "
-            "ago, and the beneficiary bank changed on this invoice."
+            "tons of primary aluminium ingot at USD 1,560,000, which is USD 3,900 "
+            "a ton. The bank's commodity band for ingot this week is USD 2,550 "
+            "to 2,800 a ton. The bill of lading shows 398 tons. The consignee was "
+            "incorporated in Labuan on 3 Sep 2026, and the beneficiary bank changed "
+            "on this invoice."
         ),
         "transactions": [
-            {"at": "14 Oct", "direction": "out", "amount": 1240000, "currency": "USD", "counterparty": "Kinabalu Commercials", "account": "Labuan 7712", "narrative": "INV-8841 copper cathode 400 MT"},
-        ],
-        "history": [
-            {"month": "2026-07", "typical_out": 810000, "new_payees": 0},
-            {"month": "2026-04", "typical_out": 760000, "new_payees": 0},
+            {"id": "T1", "at": "14 Oct", "ts": "2026-10-14T17:55:00+08:00", "direction": "out", "amount": 1560000, "currency": "USD", "counterparty": "Kinabalu Commercials", "account": "Labuan 7712", "narrative": "INV-8841 aluminium ingot 400 MT"},
         ],
         "counterparties": [
-            {
-                "name": "Kinabalu Commercials",
-                "account": "Labuan 7712",
-                "opened_days_ago": 42,
-                "relationship_on_file": "first invoice",
-                "other_customers_today": 0,
-                "salary_credits": None,
-            }
+            {"name": "Kinabalu Commercials", "account": "Labuan 7712", "bank": "Labuan offshore bank", "opened_days_ago": 36, "relationship_on_file": "first invoice, incorporated 3 Sep 2026"},
+            {"name": "Andes Refining SAC", "account": "Callao 30019", "bank": "Callao", "opened_days_ago": None, "relationship_on_file": "beneficiary on the prior six invoices"},
         ],
         "documents": [
-            {"id": "inv-8841", "kind": "invoice", "detail": "INV-8841. 400 MT copper cathode. USD 1,240,000. Unit price USD 3,100 per MT. Beneficiary bank changed from the prior Andes Refining invoices."},
+            {"id": "inv-8841", "kind": "invoice", "detail": "INV-8841. 400 MT primary aluminium ingot, P1020. USD 1,560,000. Unit price USD 3,900 per MT. Beneficiary bank changed from the prior Andes Refining invoices."},
             {"id": "bl-19", "kind": "bill of lading", "detail": "BL-19. Weight 398 MT. Port of loading Callao. Consignee Kinabalu Commercials, Labuan, incorporated 3 Sep 2026."},
-            {"id": "band-1", "kind": "market band", "detail": "Harbourline commodity desk, week of 13 Oct 2026: copper cathode USD 1,800 to 2,100 per MT. Prior six Northspan invoices were within 8 percent of the band."},
+            {"id": "band-1", "kind": "market band", "detail": "Harbourline commodity desk, week of 13 Oct 2026: P1020 aluminium ingot USD 2,550 to 2,800 per MT. Prior six Northspan invoices were within 6 percent of the band."},
         ],
         "links": [],
     },
@@ -197,12 +180,14 @@ ALERTS: list[dict] = [
         "opened": "2026-10-14T09:48:00+08:00",
         "urgency": "queue",
         "customer": {
+            "id": "C-30112",
             "name": "Arun Dela Cruz",
             "segment": "Insurance",
             "age": 38,
-            "city": "Manila",
+            "city": "Singapore",
             "tenure_years": 3,
             "occupation": "Fleet coordinator",
+            "language": "tl",
         },
         "product": "Motor claim",
         "amount": 14600,
@@ -216,14 +201,11 @@ ALERTS: list[dict] = [
             "afternoon shadows."
         ),
         "transactions": [
-            {"at": "claim", "direction": "out", "amount": 14600, "currency": "SGD", "counterparty": "Reserve for MC-22911", "account": "claims", "narrative": "requested settlement"},
-        ],
-        "history": [
-            {"month": "2026-03", "typical_out": 6200, "new_payees": 0},
+            {"id": "T1", "at": "claim", "ts": "2026-10-14T09:40:00+08:00", "direction": "in", "amount": 14600, "currency": "SGD", "counterparty": "Harbourline General claims", "account": "INS-CLAIMS", "narrative": "requested settlement MC-22911"},
         ],
         "counterparties": [
-            {"name": "Jurong Auto Works", "account": "inv 55018", "opened_days_ago": None, "relationship_on_file": "repairer", "other_customers_today": 0, "salary_credits": None},
-            {"name": "Westlane Motors", "account": "inv 55019", "opened_days_ago": None, "relationship_on_file": "repairer", "other_customers_today": 1, "salary_credits": None},
+            {"name": "Jurong Auto Works", "account": "inv 55018", "bank": "repairer", "opened_days_ago": None, "relationship_on_file": "repairer"},
+            {"name": "Westlane Motors", "account": "inv 55019", "bank": "repairer", "opened_days_ago": None, "relationship_on_file": "repairer"},
         ],
         "documents": [
             {"id": "inv-a", "kind": "invoice", "detail": "Jurong Auto Works 55018: bumper, left lamp, labour. SGD 14,600."},
@@ -235,15 +217,17 @@ ALERTS: list[dict] = [
     },
     {
         "id": "HL-4366",
-        "opened": "2026-10-15T21:10:00+08:00",
+        "opened": "2026-10-15T22:58:00+08:00",
         "urgency": "queue",
         "customer": {
+            "id": "C-20231",
             "name": "Lumen Studio Pte Ltd",
             "segment": "Business",
             "age": None,
             "city": "Singapore",
             "tenure_years": 5,
             "occupation": "Design studio, 42 staff",
+            "language": "en",
         },
         "product": "Payroll",
         "amount": 186400,
@@ -256,37 +240,122 @@ ALERTS: list[dict] = [
             "as a safe account in HL-4374."
         ),
         "transactions": [
-            {"at": "21:05", "direction": "out", "amount": 183200, "currency": "SGD", "counterparty": "41 known staff", "account": "payroll file", "narrative": "October salaries, matches September file"},
-            {"at": "21:05", "direction": "out", "amount": 3200, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "new joiner, added today"},
-        ],
-        "history": [
-            {"month": "2026-09", "typical_out": 181900, "new_payees": 0},
+            {"id": "T1", "at": "22:50", "ts": "2026-10-15T22:50:00+08:00", "direction": "out", "amount": 183200, "currency": "SGD", "counterparty": "41 known staff", "account": "payroll file", "narrative": "October salaries, matches September file"},
+            {"id": "T2", "at": "22:50", "ts": "2026-10-15T22:50:00+08:00", "direction": "out", "amount": 3200, "currency": "SGD", "counterparty": "Kelvin Ong", "account": "041-883921", "narrative": "new joiner, added today"},
         ],
         "counterparties": [
-            {
-                "name": "Kelvin Ong",
-                "account": "041-883921",
-                "opened_days_ago": 6,
-                "relationship_on_file": "not on prior payroll",
-                "other_customers_today": 4,
-                "salary_credits": 0,
-            }
+            {"name": "Kelvin Ong", "account": "041-883921", "bank": "Harbourline", "opened_days_ago": 6, "relationship_on_file": "not on prior payroll"},
         ],
         "documents": [
             {"id": "pay-1", "kind": "payroll file", "detail": "October file has 42 rows. 41 account numbers match September. The new row names Kelvin Ong, account 041-883921, SGD 3,200, start date today."},
-            {"id": "hr-1", "kind": "HR email", "detail": "No signed offer letter is on the file for Kelvin Ong. The row was uploaded by a new payroll admin login created yesterday."},
+            {"id": "hr-1", "kind": "HR email", "detail": "No signed offer letter is on the file for Kelvin Ong. The October file was uploaded at 22:50 by a payroll admin login created yesterday. Earlier files were uploaded by the finance manager in office hours."},
         ],
         "links": ["HL-4374"],
+    },
+    {
+        "id": "HL-4429",
+        "opened": "2026-10-15T14:30:00+08:00",
+        "urgency": "queue",
+        "customer": {
+            "id": "C-10902",
+            "name": "Alex Tan Wei Ming",
+            "segment": "Everyday",
+            "age": 31,
+            "city": "Singapore",
+            "tenure_years": 4,
+            "occupation": "Product manager, Larchfield Software",
+            "language": "en",
+        },
+        "product": "Inbound wire",
+        "amount": 12000,
+        "currency": "USD",
+        "rule": "Screening name match, 91 percent, to a listed person",
+        "summary": (
+            "An inbound wire of USD 12,000 from Larchfield Software GmbH in "
+            "Berlin stopped at screening. The customer's name scored 91 percent "
+            "against a listed individual who operates vessels. The listed man was "
+            "born in 1959. Alex was born in 1995 and has received salary from "
+            "the same employer for two years."
+        ),
+        "transactions": [
+            {"id": "T1", "at": "15 Oct 14:22", "ts": "2026-10-15T14:22:00+08:00", "direction": "in", "amount": 12000, "currency": "USD", "counterparty": "Larchfield Software GmbH", "account": "DE89 3704 XXXX", "narrative": "Q3 retention bonus A Tan"},
+        ],
+        "counterparties": [
+            {"name": "Larchfield Software GmbH", "account": "DE89 3704 XXXX", "bank": "Berlin", "opened_days_ago": None, "relationship_on_file": "employer, salary payer since 2024"},
+        ],
+        "documents": [
+            {"id": "scr-1", "kind": "screening hit", "detail": "List entry: TAN Wei Ming Alex. Born 4 Feb 1959. Nationality: not Singaporean. Role: director of a vessel operator named in a ship-to-ship transfer designation. Match score 91 percent on name only."},
+            {"id": "kyc-4", "kind": "KYC", "detail": "Alex Tan Wei Ming, born 19 Jun 1995, Singapore citizen, NRIC verified 2022. Employer Larchfield Software, salary credits monthly since Sep 2024."},
+            {"id": "emp-2", "kind": "employer letter", "detail": "Larchfield Software GmbH, 1 Oct 2026: Alex Tan is a product manager. A Q3 retention bonus of USD 12,000 will be paid on 15 Oct."},
+        ],
+        "links": [],
+    },
+    {
+        "id": "HL-4437",
+        "opened": "2026-10-16T03:14:00+08:00",
+        "urgency": "live",
+        "customer": {
+            "id": "C-10077",
+            "name": "Grace Lim",
+            "segment": "Priority",
+            "age": 72,
+            "city": "Singapore",
+            "tenure_years": 19,
+            "occupation": "Retired pharmacist",
+            "language": "zh",
+        },
+        "product": "Digital banking",
+        "amount": 24000,
+        "currency": "SGD",
+        "rule": "New device, password reset and new payee inside one hour",
+        "summary": (
+            "At 02:41 someone reset Grace's password from a phone the bank has "
+            "never seen. Her telco reported her SIM was replaced at 01:58. At "
+            "03:09 a new payee was added and SGD 24,000 was sent to it. Grace "
+            "has never banked after 22:00 in nineteen years."
+        ),
+        "transactions": [
+            {"id": "T1", "at": "03:12", "ts": "2026-10-16T03:12:00+08:00", "direction": "out", "amount": 24000, "currency": "SGD", "counterparty": "Zenith Digital Trading", "account": "078-220014", "narrative": "invoice 2210"},
+        ],
+        "counterparties": [
+            {"name": "Zenith Digital Trading", "account": "078-220014", "bank": "Harbourline", "opened_days_ago": 11, "relationship_on_file": "none"},
+        ],
+        "documents": [
+            {"id": "dev-2", "kind": "device log", "detail": "02:41 password reset from an Android device first seen tonight. Her registered iPhone last signed in at 19:20. 03:09 payee added. 03:12 transfer submitted."},
+            {"id": "tel-1", "kind": "telco signal", "detail": "SIM replacement on her mobile number at 01:58. One-time passwords since then went to the new SIM."},
+            {"id": "kyc-5", "kind": "KYC", "detail": "Grace Lim, customer since 2007. No sign-ins between 22:00 and 06:00 on record. Prefers Mandarin for calls."},
+        ],
+        "links": [],
     },
 ]
 
 
 def all_alerts() -> list[dict]:
-    return ALERTS
+    return ALERTS + _GENERATED
 
 
 def get_alert(alert_id: str) -> dict | None:
-    for alert in ALERTS:
+    for alert in all_alerts():
         if alert["id"] == alert_id:
             return alert
     return None
+
+
+_GENERATED: list[dict] = []
+
+
+def add_generated(alert: dict) -> None:
+    """Alerts raised by the live stream join the docket beside the authored files."""
+    _GENERATED.insert(0, deepcopy(alert))
+    del _GENERATED[60:]
+
+
+def evidence_ids(alert: dict) -> set[str]:
+    ids = {row["id"] for row in alert["transactions"]}
+    ids |= {doc["id"] for doc in alert["documents"]}
+    return ids
+
+
+def actionable(alert: dict) -> list[dict]:
+    """Transactions the desk can still hold or release. Posted rows are history."""
+    return [row for row in alert["transactions"] if row.get("state", "pending") == "pending"]
