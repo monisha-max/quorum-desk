@@ -51,6 +51,7 @@ class FakeGemini(BaseLlm):
     stall: set[str] = set()
     overrides: dict[str, dict] = {}
     tool_overrides: dict[str, list] = {}
+    answer_as: dict[str, str] = {}  # seat -> the model_version its responses report, as after a failover
     calls: list[str] = []
 
     @property
@@ -72,11 +73,12 @@ class FakeGemini(BaseLlm):
         alert = get_alert(re.search(r"(?:ALERT|FILE) (HL-[\w-]+)", prompt).group(1))
         answered = any(part.function_response for content in req.contents for part in content.parts or [])
         calls = (self.tool_overrides.get(seat) or self._tool_calls(seat, alert)) if not answered else []
+        version = self.answer_as.get(seat)
         if calls:
             yield LlmResponse(content=types.Content(role="model", parts=[
                 types.Part(function_call=types.FunctionCall(id=f"call-{seat}-{i}", name=name, args=args))
                 for i, (name, args) in enumerate(calls)
-            ]))
+            ]), model_version=version)
             return
         out = self.overrides.get(seat) or standby.brief(alert, seat) or self._default(seat, alert)
         text = json.dumps(out, ensure_ascii=False)
@@ -85,7 +87,8 @@ class FakeGemini(BaseLlm):
             yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=thought, thought=True)]), partial=True)
             for start in range(0, len(text), 80):
                 yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text[start:start + 80])]), partial=True)
-        yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=thought, thought=True), types.Part(text=text)]))
+        yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=thought, thought=True), types.Part(text=text)]),
+                          model_version=version)
 
     @staticmethod
     def _tool_calls(seat: str, alert: dict) -> list[tuple[str, dict]]:

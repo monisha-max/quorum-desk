@@ -6,7 +6,7 @@ import json
 import pytest
 from fakes import FakeGemini
 
-from quorum import hearing, store, warehouse
+from quorum import agents, hearing, store, warehouse
 
 
 def _convene(alert_id: str, requested: str = "auto", model=None):
@@ -59,6 +59,14 @@ def test_a_live_hearing_streams_reasoning_and_drafts():
     assert len(ids) == len(set(ids)) == 5
     # A fake model's hearing is never kept as a recording of Gemini.
     assert store.get_recording("HL-4402") is None
+
+
+def test_a_seat_names_the_model_that_answered_it():
+    # A quota failover can hand a seat to a smaller model; the record must name that one, not the one configured.
+    record, events = _convene("HL-4402", "live", FakeGemini(answer_as={"sentinel": "gemini-lite-after-failover"}))
+    assert store.get_hearing(record["id"])["seats"]["sentinel"]["model"] == "gemini-lite-after-failover"
+    assert next(e for e in events if e["type"] == "seat" and e["seat"] == "sentinel")["model"] == "gemini-lite-after-failover"
+    assert record["seats"]["counsel"]["model"] == agents.model_name("counsel")
 
 
 def test_the_audit_chain_verifies_and_catches_an_edit():

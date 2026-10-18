@@ -174,6 +174,9 @@ class Hearing:
         self.streams: dict[str, _Seat] = {}
         self.calls: set[str] = set()
         self.tokens: dict[str, dict[str, int]] = {}
+        # The model that actually answered each seat. A failover on quota hands a seat
+        # down the chain, so it can differ from the one configured.
+        self.answered: dict[str, str] = {}
 
     async def send(self, event: dict) -> None:
         event = {"t": round((time.perf_counter() - self.started) * 1000), **event}
@@ -198,6 +201,8 @@ class Hearing:
 
     async def on_agent_event(self, seat: str, ev) -> None:
         stream = self.streams.setdefault(seat, _Seat())
+        if ev.model_version:
+            self.answered[seat] = ev.model_version
         parts = ev.content.parts if ev.content and ev.content.parts else []
         if ev.partial:
             for part in parts:
@@ -240,10 +245,16 @@ class Hearing:
             await self.send({"type": "draft", "seat": seat, "append": prose[stream.sent:]})
             stream.sent = len(prose)
 
+    def as_answered(self, name: str, seat: dict) -> dict:
+        if seat.get("source") == "gemini" and name in self.answered:
+            return {**seat, "model": self.answered[name]}
+        return seat
+
     async def on_node_output(self, name: str, output) -> None:
         if name == "open":
             await self.send({"type": "open", **output})
         elif name in workflow.SEATS:
+            output = self.as_answered(name, output)
             for i, tool in enumerate(output.get("tools") or []):
                 call_id = f"{name}-standby-{i}"
                 await self.send({"type": "tool_call", "seat": name, "id": call_id, "name": tool["name"], "args": tool["args"]})
@@ -263,7 +274,7 @@ class Hearing:
     # ---- sealing
 
     def record(self, state: dict, replay_of: str | None = None) -> dict:
-        seats = {name: state[f"seat:{name}"] for name in workflow.SEATS if f"seat:{name}" in state}
+        seats = {name: self.as_answered(name, state[f"seat:{name}"]) for name in workflow.SEATS if f"seat:{name}" in state}
         verified = state["verified"]
         sources = {name: seat["source"] for name, seat in seats.items()}
         return {
