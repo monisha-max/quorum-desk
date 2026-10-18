@@ -6,3 +6,4 @@ data
 tests
 .env
 .pytest_cache
+.sf

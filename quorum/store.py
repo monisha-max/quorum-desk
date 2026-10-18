@@ -112,9 +112,11 @@ def list_hearings(alert_id: str | None = None, limit: int = 200) -> list[dict]:
 
         query = _CLIENT.collection(_HEARINGS)
         if alert_id:
-            query = query.where(filter=firestore.FieldFilter("alert_id", "==", alert_id))
-        rows = [snap.to_dict() for snap in query.order_by("created_at", direction="DESCENDING").limit(limit).stream()]
-        return rows
+            # Firestore cannot filter on one field and sort on another without a composite
+            # index, and the deploy creates none. One file's hearings are few, so sort here.
+            rows = [snap.to_dict() for snap in query.where(filter=firestore.FieldFilter("alert_id", "==", alert_id)).stream()]
+            return sorted(rows, key=lambda row: row["created_at"], reverse=True)[:limit]
+        return [snap.to_dict() for snap in query.order_by("created_at", direction="DESCENDING").limit(limit).stream()]
     with _LOCK:
         rows = [row for row in _LOCAL["hearings"].values() if not alert_id or row["alert_id"] == alert_id]
     return sorted(rows, key=lambda row: row["created_at"], reverse=True)[:limit]
