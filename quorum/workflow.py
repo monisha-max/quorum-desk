@@ -1,12 +1,14 @@
 """The hearing as an ADK 2 workflow graph.
 
-    open -> clerk -> (ledger | archivist | statute) -> evidence -> brief
+    open -> clerk -> (ledger | archivist | statute | sentinel) -> evidence -> brief
          -> (prosecutor | counsel) -> openings -> bench
     bench --contested--> (prosecutor_rebuttal | counsel_rebuttal) -> rebuttals -> magistrate
     bench --agreed-----> magistrate
     magistrate -> verify -> liaison
 
-Seats in parentheses sit at the same time and see only their own brief. Each
+Seats in parentheses sit at the same time and see only their own brief. The
+Sentinel sits with the evidence seats, but what it reports goes to the
+verifier alone: no advocate and not the Magistrate reads it. Each
 seat is a function node wrapping its LlmAgent, so a failed or slow model call
 falls back to the authored standby for that seat alone and the hearing goes
 on. The bench routes on whether the openings disagree; the verifier is code.
@@ -25,7 +27,7 @@ from google.adk.workflow import JoinNode, Workflow, node
 from quorum import agents, config, prompts, standby, verifier, warehouse
 from quorum.cases import actionable, get_alert
 
-EVIDENCE_SEATS = ("ledger", "archivist", "statute")
+EVIDENCE_SEATS = ("ledger", "archivist", "statute", "sentinel")
 ADVOCATES = ("prosecutor", "counsel")
 REBUTTALS = ("prosecutor_rebuttal", "counsel_rebuttal")
 SEATS = ("clerk", *EVIDENCE_SEATS, *ADVOCATES, *REBUTTALS, "magistrate", "liaison")
@@ -92,6 +94,9 @@ async def _fallback(seat: str, alert: dict, ctx: Context) -> tuple[dict, list[di
         if f"file:{alert['id']}" not in have:
             tools.append(await asyncio.to_thread(standby.run_read_file, ctx))
     out = standby.brief(alert, seat, evidence(ctx))
+    if out is None and seat == "sentinel":
+        out = {"finding": "No model screened the documents on this hearing. The verifier still checks them against its pattern, "
+                          "and will not clear a file whose added documents went unscreened.", "instructions": []}
     if out is None and seat in REBUTTALS:
         side = seat.removesuffix("_rebuttal")
         opening = seats(ctx).get(side, {}).get("out", {})
@@ -143,6 +148,9 @@ def _prompt(seat: str):
     def clerk(alert, ctx):
         return prompts.clerk(alert, documents(alert))
 
+    def sentinel(alert, ctx):
+        return prompts.sentinel(alert, documents(alert))
+
     def evidence_seat(alert, ctx):
         return getattr(prompts, seat)(alert, seats(ctx)["clerk"]["out"])
 
@@ -157,6 +165,8 @@ def _prompt(seat: str):
 
     if seat == "clerk":
         return clerk
+    if seat == "sentinel":
+        return sentinel
     if seat in EVIDENCE_SEATS:
         return evidence_seat
     if seat in ADVOCATES:
@@ -198,6 +208,7 @@ async def verify(ctx: Context, node_input):
     alert = _alert(ctx)
     sat = seats(ctx)
     scope = [value for key, value in ctx.state.to_dict().items() if key.startswith("scope:")]
+    sentinel = sat.get("sentinel", {})
     result = verifier.verify(
         alert,
         sat["magistrate"]["out"],
@@ -205,6 +216,8 @@ async def verify(ctx: Context, node_input):
         evidence=evidence(ctx),
         tamper_flags=(sat.get("archivist", {}).get("out") or {}).get("tamper_flags", []),
         scope_attempts=scope,
+        # None, not an empty list, when no model screened the documents: the verifier fails closed on uploads.
+        quotes=(sentinel.get("out") or {}).get("instructions", []) if sentinel.get("source") == "gemini" else None,
     )
     ctx.state["verified"] = result
     return result

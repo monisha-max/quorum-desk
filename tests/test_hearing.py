@@ -35,7 +35,7 @@ def test_a_standby_hearing_streams_and_seals():
     assert kinds[0] == "convened" and kinds[-1] == "sealed"
     assert events[0]["mode"] == "standby" and set(events[0]["models"].values()) == {None}
     sittings = [event["seats"] for event in events if event["type"] == "sitting"]
-    assert sittings == [["clerk"], ["ledger", "archivist", "statute"], ["prosecutor", "counsel"],
+    assert sittings == [["clerk"], ["ledger", "archivist", "statute", "sentinel"], ["prosecutor", "counsel"],
                         ["prosecutor_rebuttal", "counsel_rebuttal"], ["magistrate"], ["liaison"]]
     assert record["audit"]["seq"] == 1
     assert store.get_hearing(record["id"])["verified"]["verdict"]["disposition"] == "escalate"

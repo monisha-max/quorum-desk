@@ -11,6 +11,7 @@ const DESKS = {
   ledger: { x: 290, y: 190, w: 122, h: 26, label: "Ledger" },
   archivist: { x: 450, y: 190, w: 122, h: 26, label: "Archivist" },
   statute: { x: 610, y: 190, w: 122, h: 26, label: "Statute" },
+  sentinel: { x: 612, y: 116, w: 112, h: 26, label: "Sentinel" },
   prosecutor: { x: 104, y: 140, w: 152, h: 30, label: "Prosecutor" },
   counsel: { x: 796, y: 140, w: 152, h: 30, label: "Counsel" },
   liaison: { x: 450, y: 268, w: 126, h: 26, label: "Liaison" },
@@ -20,6 +21,8 @@ const PATHS = {
   "clerk>ledger": "M450 129 C450 158 290 150 290 177",
   "clerk>archivist": "M450 129 L450 177",
   "clerk>statute": "M450 129 C450 158 610 150 610 177",
+  "clerk>sentinel": "M509 116 L556 116",
+  "sentinel>verifier": "M640 103 C646 86 668 74 684 63",
   "ledger>prosecutor": "M229 190 C180 190 112 186 104 155",
   "statute>counsel": "M671 190 C720 190 788 186 796 155",
   "prosecutor~": "M104 116 a96 30 0 1 1 -0.1 0",
@@ -35,12 +38,14 @@ const INTO = {
   ledger: ["clerk>ledger"],
   archivist: ["clerk>archivist"],
   statute: ["clerk>statute"],
+  sentinel: ["clerk>sentinel"],
   prosecutor: ["ledger>prosecutor"],
   counsel: ["statute>counsel"],
   prosecutor_rebuttal: ["prosecutor~"],
   counsel_rebuttal: ["counsel~"],
   magistrate: ["prosecutor>magistrate", "counsel>magistrate"],
-  verifier: ["magistrate>verifier"],
+  // The Verifier reads the Sentinel's report beside the verdict.
+  verifier: ["magistrate>verifier", "sentinel>verifier"],
   liaison: ["verifier>liaison"],
 };
 
@@ -116,11 +121,14 @@ export class Plan {
     for (const id of INTO[seat] || []) this.paths[id].classList.remove("is-flowing");
     const out = record?.out || {};
     const position = out.position || out.disposition;
+    const quoted = seat === "sentinel" && record?.source === "gemini" ? (out.instructions || []).length : null;
     const sub = desk.querySelector(".desk-sub");
     if (record?.error) desk.classList.add("is-fallback");
     if (position) {
       desk.dataset.position = position;
       sub.textContent = out.moved ? `moves to ${position}` : position;
+    } else if (quoted !== null) {
+      sub.textContent = quoted ? `${quoted} quoted` : "nothing to quote";
     } else {
       sub.textContent = record ? SOURCE[record.source] || record.source : "checked";
     }
@@ -143,7 +151,7 @@ export class Plan {
     const desk = this.desks.verifier;
     desk.classList.remove("is-sitting");
     desk.classList.add("is-done");
-    this.paths["magistrate>verifier"].classList.remove("is-flowing");
+    for (const id of INTO.verifier) this.paths[id].classList.remove("is-flowing");
     const failing = result.checks.filter((check) => check.status === "fail").length;
     const fixed = result.checks.filter((check) => check.status === "fixed").length;
     desk.querySelector(".desk-sub").textContent = result.overturned

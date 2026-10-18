@@ -2,8 +2,10 @@
 
 The Clerk sees the alert. The Ledger sees payments and counterparties, never
 document text. The Archivist sees only the customer and the question; it reads
-documents through its own tool. The advocates and the Magistrate see the
-findings and the evidence board, which carries tool results, not raw documents.
+documents through its own tool. The Sentinel sees the document texts and
+nothing else, and what it reports goes to the verifier, not the bench. The
+advocates and the Magistrate see the findings and the evidence board, which
+carries tool results, not raw documents.
 """
 
 from __future__ import annotations
@@ -71,6 +73,13 @@ def statute(alert: dict, clerk_out: dict) -> str:
         _question(clerk_out),
         f"Customer age: {alert['customer'].get('age') or 'not a person'}. Segment: {alert['customer']['segment']}.",
     ])
+
+
+def sentinel(alert: dict, documents: list[dict]) -> str:
+    lines = [f"FILE {alert['id']}. {len(documents)} documents, each between its own markers."]
+    for doc in documents:
+        lines += [f"[{doc['id']} begins; kind: {doc['kind']}]", doc.get("detail", ""), f"[{doc['id']} ends]"]
+    return "\n".join(lines)
 
 
 def board(evidence: dict[str, dict]) -> list[dict]:

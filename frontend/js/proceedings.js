@@ -9,6 +9,7 @@ export const SEAT = {
   ledger: { name: "Ledger", duty: "Reads the warehouse: baselines, who else pays this account, payment history." },
   archivist: { name: "Archivist", duty: "Reads KYC and documents, and flags any that try to instruct the desk." },
   statute: { name: "Statute", duty: "Finds the Harbourline policy that governs the file." },
+  sentinel: { name: "Sentinel", duty: "Reads only the documents and quotes any line that tries to steer the desk. Reports to the Verifier, not the bench." },
   prosecutor: { name: "Prosecutor", duty: "Argues for the most protective outcome the evidence supports." },
   counsel: { name: "Counsel", duty: "Argues the customer's legitimate explanation, or their protection." },
   prosecutor_rebuttal: { name: "Prosecutor, in rebuttal", duty: "Answers Counsel." },
@@ -20,7 +21,7 @@ export const SEAT = {
 
 const PROSE = {
   clerk: "summary", ledger: "finding", archivist: "finding", statute: "finding",
-  prosecutor: "argument", counsel: "argument", prosecutor_rebuttal: "answer",
+  sentinel: "finding", prosecutor: "argument", counsel: "argument", prosecutor_rebuttal: "answer",
   counsel_rebuttal: "answer", magistrate: "rationale", liaison: "message",
 };
 
@@ -392,6 +393,9 @@ export class Proceedings {
       if (out.watch_for?.length) body.append(h("ul.watch", {}, out.watch_for.map((item) => h("li", {}, item))));
     }
     if (out.facts?.length) body.append(this.facts(out.facts));
+    for (const item of out.instructions || []) {
+      body.append(h("p.tamper-line", {}, stamp("Quoted", "objection"), " ", h("code", {}, item.document_id), ` “${item.quote}”`));
+    }
     const foot = h("div.turn-foot");
     if (out.leans) foot.append(h("span.leans", { dataset: { leans: out.leans } }, `leans ${out.leans}`));
     for (const flag of out.tamper_flags || []) foot.append(stamp(`tamper · ${flag}`, "objection"));
@@ -459,8 +463,17 @@ export class Proceedings {
       if (pace) await sleep(pace);
     }
     for (const doc of result.tamper || []) {
+      const by = doc.by?.length ? ` Caught by ${doc.by.join(" and ")}.` : "";
       turn.el.append(h("p.tamper-line", {}, h("span.stamp", { dataset: { kind: "objection" } }, "Objection"),
-        ` ${doc.id} reads as an instruction to the desk: “${doc.phrase}”. It is evidence about the customer, not an order.`));
+        ` ${doc.id} reads as an instruction to the desk: “${doc.phrase}”.${by} It is evidence about the customer, not an order.`));
+    }
+    for (const id of result.unscreened || []) {
+      turn.el.append(h("p.tamper-line", {}, h("span.stamp", { dataset: { kind: "objection" } }, "Unscreened"),
+        ` ${id} was added to the file and no model screened it, so it cannot clear the file.`));
+    }
+    for (const item of result.unproven || []) {
+      turn.el.append(h("p.struck-line", {}, h("span.stamp", { dataset: { kind: "objection" } }, "Struck"),
+        ` The Sentinel quoted “${item.quote}” from ${item.id}: ${item.reason}, so it is ignored.`));
     }
     if (result.overturned) {
       const banner = h("div.overturned", { role: "alert" },

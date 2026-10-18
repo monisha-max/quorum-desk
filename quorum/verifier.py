@@ -7,13 +7,17 @@ Gemini decides. This module checks, with no model in the loop:
 * held and released transactions are real, disjoint, and agree with the
   disposition, and the amounts are counted here rather than by the model;
 * the customer note obeys FC-02 and FC-09: no jargon, no tipping off;
-* a document that gives the reader instructions blocks a clear (FC-70);
+* a document that gives the reader instructions blocks a clear (FC-70),
+  whether the desk's pattern finds it or the Sentinel quotes it; a Sentinel
+  quote counts only if it is found word for word in the document it names;
+* a document added to the file cannot clear it unless a model screened it;
 * a tool refusal for out-of-scope data is reported as a tamper signal.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from copy import deepcopy
 
 from quorum.cases import actionable
@@ -45,6 +49,13 @@ _INSTRUCTION = re.compile(
 
 _HOLDING = {"hold", "escalate"}
 
+# A quote this short could be found in almost any document, so finding it proves nothing.
+_MIN_QUOTE = 8
+_STRAIGHT = str.maketrans({"\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'", "\u2013": "-", "\u2014": "-"})
+# Models wrap a quote in quotation marks or end it with a full stop the document may not have there.
+_EDGES = " \"'.,;:!?\u3002\u3001\u300c\u300d\u2026"
+_MARKS = "\"'\u201c\u201d\u2018\u2019\u300c\u300d"
+
 
 def lint_note(message: str) -> list[str]:
     """Banned words found in a customer note, in the order FC-02 lists them."""
@@ -59,6 +70,39 @@ def scan_documents(documents: list[dict]) -> list[dict]:
         if match:
             found.append({"id": doc["id"], "phrase": match.group(0)})
     return found
+
+
+def _plain(text: str) -> str:
+    """Text as a quote is compared: NFKC, case folded, quotation marks straightened, spaces collapsed."""
+    return " ".join(unicodedata.normalize("NFKC", text or "").casefold().translate(_STRAIGHT).split())
+
+
+def check_quotes(quotes: list[dict], documents: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split the Sentinel's quotes into those found in the document they name and those struck."""
+    texts = {doc["id"]: _plain(doc.get("detail", "")) for doc in documents}
+    found, struck = [], []
+    for item in quotes:
+        doc_id = (item.get("document_id") or "").strip()
+        quote = _plain(item.get("quote", "")).strip(_EDGES)
+        if len(quote.replace(" ", "")) < _MIN_QUOTE:
+            struck.append({"id": doc_id, "quote": item.get("quote", ""), "reason": "too short to prove anything"})
+        elif quote not in texts.get(doc_id, ""):
+            struck.append({"id": doc_id, "quote": item.get("quote", ""),
+                           "reason": "not in that document" if doc_id in texts else "no such document"})
+        else:
+            found.append({"id": doc_id, "phrase": item["quote"].strip().strip(_MARKS).strip()})
+    return found, struck
+
+
+def _planted(quoted: list[dict], scanned: list[dict]) -> list[dict]:
+    """One entry per document that reads as an instruction, with what caught it."""
+    planted: dict[str, dict] = {}
+    for by, items in (("the Sentinel", quoted), ("the pattern", scanned)):
+        for item in items:
+            entry = planted.setdefault(item["id"], {"id": item["id"], "phrase": item["phrase"], "by": []})
+            if by not in entry["by"]:
+                entry["by"].append(by)
+    return sorted(planted.values(), key=lambda entry: entry["id"])
 
 
 def _normalise(ref: str, alert_id: str) -> str:
@@ -111,8 +155,12 @@ def verify(
     evidence: dict[str, dict],
     tamper_flags: list[str] | None = None,
     scope_attempts: list[dict] | None = None,
+    quotes: list[dict] | None = None,
 ) -> dict:
-    """Return the verdict as it may be signed, plus every check and what it changed."""
+    """Return the verdict as it may be signed, plus every check and what it changed.
+
+    `quotes` is what the Sentinel reported, or None when no model screened the documents.
+    """
     out = deepcopy(verdict)
     checks: list[dict] = []
     allowed = valid_refs(alert, documents, evidence)
@@ -191,15 +239,30 @@ def verify(
 
     overturned = None
     scanned = scan_documents(documents)
-    flagged = sorted(set(tamper_flags or []) | {item["id"] for item in scanned})
-    injection = bool(scanned)
-    if (injection or scope_attempts) and disposition in {"clear", "split"}:
-        # Only the documents that actually read as instructions are named here; the Archivist's
-        # other flags (an altered photo, say) are for the officer to read, not the reason to hold.
-        planted = [item["id"] for item in scanned]
-        reasons = [f"{', '.join(planted)} {'read' if len(planted) > 1 else 'reads'} as an instruction to the desk"] if planted else []
-        if scope_attempts:
-            reasons.append(f"a seat asked for {', '.join(sorted({item['asked'] for item in scope_attempts}))}, which is outside this file")
+    quoted, unproven = check_quotes(quotes or [], documents)
+    planted = _planted(quoted, scanned)
+    planted_ids = [item["id"] for item in planted]
+    # Anyone at the desk can add an upload; a file's own documents are fixed and were written with it.
+    # An upload is where wording nobody foresaw arrives, so a model must have screened it before the
+    # file can clear. The pattern alone is not enough.
+    unscreened = [doc["id"] for doc in documents if doc.get("uploaded") and doc["id"] not in planted_ids] if quotes is None else []
+    flagged = sorted(set(tamper_flags or []) | set(planted_ids) | set(unscreened))
+    # Only what actually blocks the file is named here; the Archivist's other flags (an altered photo,
+    # say) are for the officer to read, not the reason to hold.
+    reasons = []
+    if planted_ids:
+        reasons.append(f"{', '.join(planted_ids)} {'read' if len(planted_ids) > 1 else 'reads'} as an instruction to the desk")
+    if unscreened:
+        many = len(unscreened) > 1
+        reasons.append(f"{', '.join(unscreened)} {'were' if many else 'was'} added to the file and no model screened {'them' if many else 'it'}")
+    if scope_attempts:
+        reasons.append(f"a seat asked for {', '.join(sorted({item['asked'] for item in scope_attempts}))}, which is outside this file")
+    how = [f"{item['id']} caught by {' and '.join(item['by'])}" for item in planted]
+    if unproven:
+        how.append(f"{len(unproven)} Sentinel {'quote' if len(unproven) == 1 else 'quotes'} not found in the document named, ignored")
+    if quotes is None:
+        how.append("the Sentinel did not sit, so only the pattern read the documents")
+    if reasons and disposition in {"clear", "split"}:
         reason = " and ".join(reasons) + " (FC-70)"
         out["disposition"] = "hold"
         out["held_txn_ids"] = [row["id"] for row in open_rows]
@@ -210,7 +273,9 @@ def verify(
         # The model's note described the payment it meant to release; the customer must hear what actually happened.
         out["customer_message"] = safe_note(alert, "hold")
         # The typology and next step described the release; the rationale stays as the Magistrate wrote it.
-        out["typology"] = "Instruction planted in a document (FC-70)"
+        out["typology"] = ("Instruction planted in a document (FC-70)" if planted
+                           else "Added document not screened (FC-70)" if unscreened
+                           else "Tool request outside the file (FC-70)")
         out["next_step"] = (f"Keep {out['held_amount'] or 'the payment'} held. An officer reads "
                             f"{', '.join(flagged) or 'the tool log'} and confirms the payment with the customer "
                             "on their registered number before anything is released.")
@@ -218,16 +283,19 @@ def verify(
         # The money check counted the model's release; the record must not say so beside a hold.
         money_check = next(check for check in checks if check["id"] == "money")
         money_check["detail"] = f"held {out['held_amount'] or 'nothing'}, released nothing once overturned"
-        checks.append({"id": "fc70", "label": "No instruction in a document decides the file", "status": "fixed",
-                       "detail": f"{disposition} overturned to hold: {reason}"})
+        detail = f"{disposition} overturned to hold: {reason}"
+    elif reasons:
+        detail = f"{' and '.join(reasons)}; the {disposition} keeps the money held"
+    elif tamper_flags:
+        detail = f"no document addresses the reviewer; the Archivist's flags on {', '.join(sorted(set(tamper_flags)))} are for the officer"
     else:
-        checks.append({
-            "id": "fc70",
-            "label": "No instruction in a document decides the file",
-            "status": "pass" if not (injection or scope_attempts) else "fixed",
-            "detail": ("no document addresses the reviewer" if not flagged and not scope_attempts
-                       else f"tamper signal on {', '.join(flagged) or 'tool scope'}, kept held"),
-        })
+        detail = "no document addresses the reviewer"
+    checks.append({
+        "id": "fc70",
+        "label": "No instruction in a document decides the file",
+        "status": "fixed" if reasons else "pass",
+        "detail": "; ".join([detail, *how]),
+    })
     # Linted after FC-70, which may have rewritten the note.
     banned = lint_note(out.get("customer_message", ""))
     checks.append({
@@ -241,14 +309,16 @@ def verify(
         checks.append({"id": "scope", "label": "Tools stayed on this file", "status": "fail",
                        "detail": "refused: " + ", ".join(sorted({item["asked"] for item in scope_attempts}))})
 
-    penalty = 0.08 * len(struck) + (0.1 if injection else 0)
+    penalty = 0.08 * len(struck) + (0.1 if planted else 0)
     confidence = max(0.3, min(0.99, float(out.get("confidence", 0.5)) - penalty))
     out["confidence"] = round(confidence, 2)
     return {
         "verdict": out,
         "checks": checks,
         "struck": struck,
-        "tamper": scanned,
+        "tamper": planted,
+        "unscreened": unscreened,
+        "unproven": unproven,
         "lint": banned,
         "overturned": overturned,
         "passed": all(item["status"] != "fail" for item in checks),

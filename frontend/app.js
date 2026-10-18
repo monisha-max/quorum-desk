@@ -80,7 +80,7 @@ function chainChip(result, count) {
 function stack(config) {
   const rows = [
     ["Reasoning", config.gemini === "none" ? "Gemini off: standby and replay" : `Gemini ${config.models.ledger}, Magistrate ${config.models.magistrate}`],
-    ["Workflow", "ADK 2 graph: eight seats and a code verifier"],
+    ["Workflow", "ADK 2 graph: nine seats and a code verifier"],
     ["Warehouse", config.engine],
     ["Docket & audit", config.store === "firestore" ? "Firestore" : "local file"],
     ["Host", config.host === "cloud-run" ? "Cloud Run" : "local"],
@@ -167,7 +167,7 @@ function onFile(detail) {
       status.textContent = "Adding…";
       try {
         const result = await api.post(`/api/alerts/${encodeURIComponent(alert.id)}/documents`, { kind: kind.value, detail: text.value });
-        announce(result.reads_as_instruction.length ? "Added. It reads as an instruction to the desk." : "Added to the file.");
+        announce(result.reads_as_instruction.length ? "Added. It reads as an instruction to the desk." : "Added to the file. The Sentinel reads it when the bench sits.");
         await select(alert.id, { keepView: true });
       } catch (error) {
         status.textContent = error.message;
@@ -247,7 +247,7 @@ function renderHistory(detail) {
 
 function emptyChamber() {
   $("#proceedings").replaceChildren(h("div.chamber-empty", {},
-    h("p.thesis", {}, "Eight seats hear this file. The Prosecutor and Counsel argue it from the bank's own records, the Magistrate decides, and code checks the verdict before you sign it."),
+    h("p.thesis", {}, "Nine seats hear this file. The Prosecutor and Counsel argue it from the bank's own records, the Magistrate decides, and code checks the verdict before you sign it."),
     h("p.thesis-sub", {}, "Every fact must cite something on the file. Every outcome is sealed into a chain you can check from this page.")));
   $("#banner").hidden = true;
   $("#tabs").hidden = true;

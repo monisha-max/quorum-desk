@@ -38,7 +38,7 @@ MODES = ("auto", "live", "standby", "replay")
 # The prose field of each seat's answer, streamed to the desk as the model writes it.
 PROSE = {
     "clerk": "summary", "ledger": "finding", "archivist": "finding", "statute": "finding",
-    "prosecutor": "argument", "counsel": "argument", "prosecutor_rebuttal": "answer",
+    "sentinel": "finding", "prosecutor": "argument", "counsel": "argument", "prosecutor_rebuttal": "answer",
     "counsel_rebuttal": "answer", "magistrate": "rationale", "liaison": "message",
 }
 # Which seats sit when a node finishes.

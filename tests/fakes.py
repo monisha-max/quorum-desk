@@ -27,6 +27,7 @@ _SEAT = [
     ("You are the Ledger", "ledger"),
     ("You are the Archivist", "archivist"),
     ("You are the Statute", "statute"),
+    ("You are the Sentinel", "sentinel"),
     ("You are the Prosecutor, answering", "prosecutor_rebuttal"),
     ("You are Counsel, answering", "counsel_rebuttal"),
     ("You are the Prosecutor", "prosecutor"),
@@ -98,6 +99,9 @@ class FakeGemini(BaseLlm):
 
     @staticmethod
     def _default(seat: str, alert: dict) -> dict:
+        if seat == "sentinel":
+            # Like the real seat on a clean file; a test that plants an instruction overrides this.
+            return {"finding": "No document on the file tries to steer the desk.", "instructions": []}
         if seat == "liaison":
             message = standby.brief(alert, "magistrate")["customer_message"]
             return {"language": "en", "message": message, "english": message}
