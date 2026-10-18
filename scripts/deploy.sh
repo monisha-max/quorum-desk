@@ -60,6 +60,11 @@ else
   SECRETS=(--set-secrets "GEMINI_API_KEY=${SECRET}:latest")
 fi
 
+# Firebase Hosting cuts a response at 60 s, so the pages it serves stream hearings from the
+# service's own URL. A first deploy has no URL yet, and gets it once the service exists.
+URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)' 2>/dev/null || true)"
+[ -n "$URL" ] && ENV_VARS="${ENV_VARS},QUORUM_STREAM_ORIGIN=${URL}"
+
 # One instance: uploads and live hearing streams are held in memory, and it caps spend.
 # No CPU throttling: a hearing keeps running to its seal after the browser disconnects.
 gcloud run deploy "$SERVICE" \
@@ -76,4 +81,8 @@ gcloud run deploy "$SERVICE" \
   ${SECRETS[@]+"${SECRETS[@]}"} \
   --quiet
 
-gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)'
+if [ -z "$URL" ]; then
+  URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+  gcloud run services update "$SERVICE" --region "$REGION" --update-env-vars "QUORUM_STREAM_ORIGIN=${URL}" --quiet
+fi
+echo "$URL"

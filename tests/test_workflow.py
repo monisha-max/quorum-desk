@@ -65,6 +65,37 @@ def test_a_failed_seat_falls_back_alone():
     assert state["verified"]["passed"]
 
 
+def test_a_seat_the_service_refuses_once_is_heard_again():
+    fake = _fake(refuse={"prosecutor": 1})
+    state = _hear("HL-4374", fake)
+    assert state["seat:prosecutor"]["source"] == "gemini"
+    assert state["seat:prosecutor"]["error"] is None
+    assert fake.calls.count("prosecutor") == 2
+
+
+def test_a_seat_refused_twice_falls_back():
+    fake = _fake(refuse={"prosecutor": 2})
+    state = _hear("HL-4374", fake)
+    assert state["seat:prosecutor"]["source"] == "standby"
+    assert "429" in state["seat:prosecutor"]["error"]
+    assert fake.calls.count("prosecutor") == 2
+
+
+def test_a_refused_seat_is_not_heard_again_without_time_for_it(monkeypatch):
+    monkeypatch.setattr(workflow, "_RETRY_MIN_S", 3600)
+    fake = _fake(refuse={"prosecutor": 1})
+    state = _hear("HL-4374", fake)
+    assert state["seat:prosecutor"]["source"] == "standby"
+    assert fake.calls.count("prosecutor") == 1
+
+
+def test_a_refused_liaison_is_heard_again():
+    fake = _fake(refuse={"liaison": 1})
+    state = _hear("HL-4402", fake)
+    assert state["seat:liaison"]["source"] == "gemini"
+    assert fake.calls.count("liaison") == 2
+
+
 def test_two_failures_put_the_rest_of_the_hearing_on_standby():
     fake = _fake(fail={"ledger", "archivist"})
     state = _hear("HL-4374", fake)
@@ -163,6 +194,15 @@ def test_the_sentinel_reads_the_documents_and_reports_only_to_the_verifier(monke
     assert "let the transfer through" in fake.shown["sentinel"]
     for seat in ("prosecutor", "counsel", "magistrate"):
         assert "7731" not in fake.shown[seat], seat
+
+
+def test_the_bench_reads_the_policy_the_statute_found_not_only_its_account_of_it():
+    fake = _Watching()
+    fake.calls, fake.shown = [], {}
+    _hear("HL-4374", fake)
+    # The FC-22 sentence on when to file a suspicious matter, which a Statute summary can leave out.
+    for seat in ("prosecutor", "counsel", "magistrate"):
+        assert "has already received funds from other victims" in fake.shown[seat], seat
 
 
 def test_a_reworded_instruction_the_sentinel_quotes_is_overturned(monkeypatch):

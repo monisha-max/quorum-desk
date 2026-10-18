@@ -9,14 +9,18 @@
 Seats in parentheses sit at the same time and see only their own brief. The
 Sentinel sits with the evidence seats, but what it reports goes to the
 verifier alone: no advocate and not the Magistrate reads it. Each
-seat is a function node wrapping its LlmAgent, so a failed or slow model call
-falls back to the authored standby for that seat alone and the hearing goes
-on. The bench routes on whether the openings disagree; the verifier is code.
+seat is a function node wrapping its LlmAgent. A seat that stalls, or is
+refused mid-stream, is asked once more if it has time left; a seat that still
+fails, or runs out of time, falls back to the authored standby for that seat
+and the hearing goes on. After two such failures the remaining seats skip the
+model. The bench routes
+on whether the openings disagree; the verifier is code.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 
 from google.adk.agents.context import Context
@@ -35,6 +39,19 @@ SEATS = ("clerk", *EVIDENCE_SEATS, *ADVOCATES, *REBUTTALS, "magistrate", "liaiso
 # After this many seats fail in one hearing, the rest go straight to standby
 # instead of each waiting out the same outage.
 _FAILURES_BEFORE_STANDBY = 2
+# A seat the service refused, or that stalled, is heard once more if this much of its time is left.
+_RETRY_MIN_S = 20.0
+# A seat streams something every few seconds while it thinks and writes. One
+# that goes this long without a chunk has stalled, and asked again it usually
+# answers in seconds. The clock starts with the run, not the first chunk: the
+# stalls seen on the bench were waits for a first chunk.
+_SILENCE_S = 25.0
+# When each seat of a sitting hearing last streamed, by hearing id. The hearing
+# stamps it from the events it relays; a graph run with no hearing has no entry,
+# so its seats wait out their whole timeout.
+HEARD: dict[str, dict[str, float]] = {}
+# Quota and server errors: worth asking again. Anything else would fail the same way.
+_REFUSALS = frozenset({429, 500, 502, 503, 504})
 
 
 def _alert(ctx: Context) -> dict:
@@ -57,6 +74,63 @@ def _short(exc: BaseException) -> str:
     exc = getattr(exc, "error", None) or exc  # ADK wraps a failed child node; report what actually failed
     text = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
     return f"{type(exc).__name__}: {text[:160]}" if text else type(exc).__name__
+
+
+def _refused(exc: BaseException) -> bool:
+    exc = getattr(exc, "error", None) or exc
+    return getattr(exc, "code", None) in _REFUSALS or getattr(exc, "status_code", None) in _REFUSALS
+
+
+class Stalled(TimeoutError):
+    """The seat streamed nothing for _SILENCE_S."""
+
+
+async def _sit(ctx: Context, seat: str, agent, node_input, timeout: float):
+    """Run the seat's agent, and once more if it stalled or was refused mid-stream, with time to spare.
+
+    The model chain fails over only on an error before a model's first chunk. A
+    refusal after that, or a stream that stops, would otherwise send the seat
+    straight to standby. A refusal before anything streamed has already been
+    through the whole chain, and is not asked again.
+    """
+    deadline = time.perf_counter() + timeout
+    heard = HEARD.get(ctx.state.get("hearing_id"))
+    started = asyncio.get_running_loop().time()
+    try:
+        return await _run(ctx, seat, agent, node_input, timeout)
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is worth one more try
+        left = deadline - time.perf_counter()
+        # A graph run with no hearing cannot tell whether the seat streamed, so it is asked again.
+        streamed = heard is None or heard.get(seat, started) > started
+        if not ((_refused(exc) and streamed) or isinstance(exc, Stalled)) or left < _RETRY_MIN_S or _on_standby(ctx):
+            raise
+    return await _run(ctx, seat, agent, node_input, left)
+
+
+async def _run(ctx: Context, seat: str, agent, node_input, timeout: float):
+    """One run of the seat's agent: TimeoutError after `timeout`, Stalled after _SILENCE_S without a chunk."""
+    loop = asyncio.get_running_loop()
+    heard = HEARD.get(ctx.state.get("hearing_id"))
+    started = loop.time()
+    run = asyncio.ensure_future(ctx.run_node(agent, node_input=node_input))
+    try:
+        while not run.done():
+            now = loop.time()
+            # A stamp from an earlier run of this seat does not count for this one.
+            quiet_since = max(started, heard.get(seat, started)) if heard is not None else math.inf
+            if now - started >= timeout:
+                raise TimeoutError
+            if now - quiet_since >= _SILENCE_S:
+                raise Stalled(f"nothing streamed for {_SILENCE_S:.0f} s")
+            await asyncio.wait({run}, timeout=min(started + timeout, quiet_since + _SILENCE_S) - now)
+        return run.result()
+    finally:
+        if not run.done():
+            run.cancel()
+            # Wait for it to wind down without raising its error, but still raise if this seat is itself cancelled.
+            await asyncio.wait({run})
+            if not run.cancelled():
+                run.exception()  # retrieved, so asyncio does not log it as never retrieved
 
 
 class _Standby(Exception):
@@ -120,11 +194,11 @@ def _seat(name: str, agent, prompt) -> object:
         try:
             if _on_standby(ctx):
                 raise _Standby("hearing is on standby")
-            out = await asyncio.wait_for(ctx.run_node(agent, node_input=prompt(alert, ctx)), timeout=timeout)
+            out = await _sit(ctx, name, agent, prompt(alert, ctx), timeout)
             if not isinstance(out, dict):
                 raise ValueError("no structured output")
             source = "gemini"
-        except Exception as exc:  # noqa: BLE001 - any model failure falls back for this seat only
+        except Exception as exc:  # noqa: BLE001 - any model failure falls back to the standby brief
             if not isinstance(exc, _Standby):
                 error = _short(exc)
             out, tools = await _fallback(name, alert, ctx)
@@ -238,10 +312,7 @@ def _liaison(agent) -> object:
             try:
                 if _on_standby(ctx):
                     raise _Standby("hearing is on standby")
-                out = await asyncio.wait_for(
-                    ctx.run_node(agent, node_input=prompts.liaison(alert, verdict, result["lint"])),
-                    timeout=config.SEAT_TIMEOUT_S,
-                )
+                out = await _sit(ctx, "liaison", agent, prompts.liaison(alert, verdict, result["lint"]), config.SEAT_TIMEOUT_S)
                 if not isinstance(out, dict):
                     raise ValueError("no structured output")
                 if verifier.lint_note(out.get("english", "")):

@@ -2,8 +2,10 @@
 
 Modes, and what the desk tells the officer about each:
 
-* live: Gemini sits every seat. A seat that fails or stalls falls back to its
-  standby brief alone, and the record says which seats did.
+* live: Gemini sits every seat. A seat that stalls, or is refused mid-stream,
+  is asked once more; one that still fails falls back to its standby brief.
+  Once two have, the rest of the hearing does too rather than wait out the
+  same outage. The record says which seats did.
 * standby: no model calls. Authored briefs, over tool results that are run for
   real against the warehouse, so every citation still resolves.
 * replay: a recorded, fully live Gemini hearing on the same file, streamed
@@ -172,11 +174,14 @@ class Hearing:
         self.created_at = store.now()
         self.events: list[dict] = []
         self.streams: dict[str, _Seat] = {}
+        self.runs: dict[str, str] = {}  # seat -> the agent run it is streaming; a new one means it was asked again
         self.calls: set[str] = set()
         self.tokens: dict[str, dict[str, int]] = {}
         # The model that actually answered each seat. A failover on quota hands a seat
         # down the chain, so it can differ from the one configured.
         self.answered: dict[str, str] = {}
+        # When each seat last streamed, on the event loop's clock; a seat quiet too long is asked again.
+        self.heard: dict[str, float] = {}
 
     async def send(self, event: dict) -> None:
         event = {"t": round((time.perf_counter() - self.started) * 1000), **event}
@@ -199,7 +204,14 @@ class Hearing:
 
     # ---- ADK events -> desk events
 
-    async def on_agent_event(self, seat: str, ev) -> None:
+    async def on_agent_event(self, seat: str, ev, run: str = "") -> None:
+        if ev.content:  # an error event carries none, and is not the seat streaming
+            self.heard[seat] = asyncio.get_running_loop().time()
+        if self.runs.setdefault(seat, run) != run:
+            # The seat was cut off, refused or stalled, and is being asked again: what it streamed is void.
+            self.runs[seat] = run
+            self.streams[seat] = _Seat()
+            await self.send({"type": "retry", "seat": seat})
         stream = self.streams.setdefault(seat, _Seat())
         if ev.model_version:
             self.answered[seat] = ev.model_version
@@ -223,7 +235,8 @@ class Hearing:
             await self.draft(seat, stream)
         for part in parts:
             call = part.function_call
-            key = call and (call.id or f"{seat}:{call.name}:{json.dumps(dict(call.args or {}), sort_keys=True)}")
+            # Per run: a seat asked again may make the same call again, and it is shown again.
+            key = call and f"{seat}:{run}:" + (call.id or f"{call.name}:{json.dumps(dict(call.args or {}), sort_keys=True)}")
             if call and key not in self.calls:
                 self.calls.add(key)
                 await self.send({"type": "tool_call", "seat": seat, "id": call.id, "name": call.name, "args": dict(call.args or {})})
@@ -346,15 +359,18 @@ async def _hear(hearing: Hearing, model: BaseLlm | None) -> dict:
         state={"alert_id": alert["id"], "hearing_id": hearing.id, "mode": "gemini" if hearing.mode == "live" else "standby"},
     )
     message = types.Content(role="user", parts=[types.Part(text=f"Hear {alert['id']}.")])
+    workflow.HEARD[hearing.id] = hearing.heard
     try:
         async for ev in runner.run_async(user_id="desk", session_id=session.id, new_message=message, run_config=_run_config()):
-            names = [segment.split("@")[0] for segment in (ev.node_info.path if ev.node_info else "").split("/") if segment]
+            segments = [segment for segment in (ev.node_info.path if ev.node_info else "").split("/") if segment]
+            names = [segment.split("@")[0] for segment in segments]
             if len(names) >= 3 and names[1] in workflow.SEATS:
-                await hearing.on_agent_event(names[1], ev)
+                await hearing.on_agent_event(names[1], ev, run=segments[2])
             elif len(names) == 2 and ev.output is not None:
                 await hearing.on_node_output(names[1], ev.output)
         state = (await runner.session_service.get_session(app_name="quorum", user_id="desk", session_id=session.id)).state
     finally:
+        workflow.HEARD.pop(hearing.id, None)
         await runner.session_service.delete_session(app_name="quorum", user_id="desk", session_id=session.id)
     if "verified" not in state:
         raise RuntimeError("the hearing ended without a verdict")

@@ -39,6 +39,7 @@ A customer can add a document to a file, and a document can say anything, includ
 - **Quotes, not opinions.** The Sentinel must copy the steering passage word for word. The Verifier searches for that quote in the document it names. A quote it cannot find is struck and has no effect, so the model cannot hold a file on a sentence it made up.
 - **Fail closed.** If the Sentinel did not sit (Gemini failed, or the hearing ran on standby), a document added to the file at the desk cannot clear it. The file is held for a person.
 - **Separation.** The Sentinel's report goes to the Verifier only. The advocates and the Magistrate never read it, and the Sentinel has no tools.
+- **Measured.** `scripts/eval_sentinel.py` shows the Sentinel 20 planted instructions in seven languages and 10 honest documents. On `gemini-3.8-flash` it caught all 20 and flagged none of the 10. The pattern alone caught 1 and flagged 1.
 
 ## What to try
 
@@ -52,11 +53,11 @@ A live hearing is Gemini's decision, so these are what the file should come to, 
 
 ## How it uses Google Cloud
 
-- **Gemini** does all of the reasoning. Gathering seats and the Sentinel run on a Flash model; the Magistrate runs on the strongest model the backend offers, with high thinking. Every seat returns structured output validated against a Pydantic schema. If a seat's model is out of quota, the seat tries the fallback models in order.
+- **Gemini** does all of the reasoning. The Clerk and the Liaison run on Flash-Lite; every other seat, the Magistrate included, runs on Flash, and the Magistrate thinks hardest. Every seat returns structured output validated against a Pydantic schema. If a seat's model is out of quota, the seat tries the fallback models in order.
 - **Agent Development Kit 2** runs the hearing as a workflow graph (`quorum/workflow.py`). Each seat is a function node around an `LlmAgent`, and the bench routes on whether the openings disagree.
 - **Cloud Run** serves the desk: FastAPI, with the hearing streamed to the browser as server-sent events. A hearing keeps running to its seal if the browser disconnects, and the browser can reattach to the stream.
 - **Firestore** keeps every hearing record, the officer's decision, the recordings, and the audit chain. Each audit entry is `sha256(previous hash + "\n" + entry)`, appended inside a Firestore transaction against a head document, so two hearings cannot both claim the same place in the chain.
-- **Firebase.** `firestore.rules` deny all client access: only the Cloud Run service account touches Firestore. `firebase.json` deploys those rules and can put Firebase Hosting in front of the same Cloud Run service.
+- **Firebase.** `firestore.rules` deny all client access: only the Cloud Run service account touches Firestore. `firebase.json` deploys those rules and puts Firebase Hosting in front of the same Cloud Run service. Hosting buffers a response and ends it at 60 s, so a page it serves streams live hearings from Cloud Run directly (`QUORUM_STREAM_ORIGIN`).
 - **BigQuery** (optional). `scripts/seed_bigquery.py` loads the synthetic warehouse, and `QUORUM_USE_BIGQUERY=1` points the Ledger's tools at it. Without it, the same SQL runs on an in-process SQLite mirror, and the record names the engine that answered.
 
 ## Live, replay, standby
@@ -66,7 +67,7 @@ The desk always says how a file was heard, on the record and in the audit chain.
 - **Live.** Gemini sits in every seat.
 - **Replay.** A recorded live Gemini hearing (`scripts/record.py`), played back, never re-decided. Auto mode uses one only when Gemini cannot sit, and no file plays one if a document has been added to it since. It is labelled as a replay, with the hearing it replays.
 - **Standby.** Authored briefs run over the real tool results, with no model calls. It exists so the desk still works without a key, and it is labelled as standby everywhere.
-- **Auto** (the default) means live if Gemini is configured and not cooling off after a quota error, then replay if a recording exists, then standby. A single seat that fails mid-hearing falls back to standby for that seat alone, and the record's *Who sat, and on what* table shows the source of every seat.
+- **Auto** (the default) means live if Gemini is configured and not cooling off after a quota error, then replay if a recording exists, then standby. A seat that streams nothing for 25 s, or that the service cuts off partway through its answer, is asked once more if it has time left; a seat that still fails falls back to its standby brief. After two such failures the rest of that hearing skips the model rather than wait out the same outage. The record's *Who sat, and on what* table shows the source of every seat.
 
 ## Run locally
 
@@ -118,6 +119,8 @@ The script enables the APIs, creates Firestore and a dedicated service account f
 | `QUORUM_THINKING` | `on` | model thinking |
 | `QUORUM_USE_FIRESTORE` | `auto` | `on`, `off`, or `auto` (Firestore if reachable) |
 | `QUORUM_USE_BIGQUERY` | off | Ledger tools on BigQuery instead of the mirror |
+| `QUORUM_STREAM_ORIGIN` | none | the Cloud Run URL; pages Firebase Hosting serves stream hearings from it |
+| `QUORUM_PAGE_ORIGINS` | the project's `web.app` and `firebaseapp.com` sites, when `QUORUM_STREAM_ORIGIN` is set | pages allowed to stream from it |
 | `QUORUM_MAX_HEARINGS`, `QUORUM_IP_RATE`, `QUORUM_GLOBAL_RATE` | 4, 6, 30 | caps on concurrent hearings and hearings per minute, so a public link cannot run up a bill |
 
 ## Layout

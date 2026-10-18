@@ -25,6 +25,7 @@ const state = {
   mode: localStorage.getItem("quorum.mode") || "auto",
   sitting: false,
   controller: null,
+  metrics: null,
 };
 
 const plan = new Plan($("#plan"));
@@ -48,6 +49,7 @@ function sums(byCurrency) {
 async function ticker() {
   try {
     const m = await api.get("/api/metrics");
+    state.metrics = m;
     const items = [
       ["Heard", m.hearings],
       ["False positives", m.false_positives_cleared],
@@ -317,7 +319,10 @@ function convened(event) {
   const requested = state.requested;
   let text;
   if (event.mode === "live") {
-    text = [h("strong", {}, "Live. "), `Every seat is a Gemini call: ${event.models.ledger} at the seats, ${event.models.magistrate} on the bench.`];
+    const median = state.metrics?.median_live_seconds;
+    const takes = median ? `Live hearings here have taken ${duration(median)} at the median` : "A live hearing takes a few minutes";
+    text = [h("strong", {}, "Live. "), `Every seat is a Gemini call: ${event.models.ledger} at the seats, ${event.models.magistrate} on the bench. `,
+      `${takes}; each seat streams as it thinks. Elapsed `, clock(), "."];
   } else if (event.mode === "replay") {
     text = [h("strong", {}, "Replay. "), "This is the recorded live hearing ", h("code", {}, event.replay_of), ` from ${when(event.recorded_at)}, streamed with its original timing. No model is called now, and the record is sealed as a replay.`];
   } else {
@@ -328,6 +333,22 @@ function convened(event) {
   }
   banner.replaceChildren(...text);
   if (event.mode === "standby") state.controls.skip.hidden = false;
+}
+
+function duration(s) {
+  return s < 100 ? `${Math.round(s)} seconds` : `${(s / 60).toFixed(1).replace(/\.0$/, "")} minutes`;
+}
+
+// Time since the hearing convened, until the bench rises.
+function clock() {
+  const started = Date.now();
+  const el = h("span.banner-clock", { role: "timer" }, "0:00");
+  const tick = setInterval(() => {
+    if (!state.sitting || !el.isConnected) return clearInterval(tick);
+    const s = Math.floor((Date.now() - started) / 1000);
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }, 1000);
+  return el;
 }
 
 async function sealed(event) {
@@ -397,7 +418,9 @@ async function convene() {
   tab("proceedings");
   $("#banner").hidden = true;
   try {
-    await hear(alert.id, state.mode, (event) => proceedings.push(event), { signal: state.controller.signal });
+    // Only a page the stream origin allows streams from it; any other, Cloud Run's own URLs included, streams from itself.
+    const origin = state.config.page_origins.includes(location.origin) ? state.config.stream_origin : "";
+    await hear(alert.id, state.mode, (event) => proceedings.push(event), { signal: state.controller.signal, origin });
   } catch (error) {
     if (error.name === "AbortError") return;
     const wait = error.retryAfter ? ` Try again in ${error.retryAfter} s.` : "";

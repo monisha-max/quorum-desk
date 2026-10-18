@@ -106,12 +106,11 @@ export class Exhibits {
     const list = this._list();
     if ($(`[data-exhibit="${CSS.escape(ref)}"]`, list)) return;
     const rows = [];
-    const passage = this.passages[ref];
+    // A sealed record carries the passage on the board; a hearing that is sitting has it from the tool result.
+    const passage = this.passages[ref] || (tool === "search_policy" && summary?.title ? summary : null);
     if (passage) {
       rows.push(h("p.ex-title", {}, passage.title));
-      rows.push(h("p.ex-text", {}, passage.text));
-    } else if (tool === "search_policy" && summary?.title) {
-      rows.push(h("p.ex-title", {}, summary.title));
+      if (passage.text) rows.push(h("p.ex-text", {}, passage.text));
     } else {
       const facts = h("dl.ex-facts");
       for (const [key, value] of Object.entries(summary || {}).slice(0, 12)) {
@@ -326,6 +325,26 @@ export class Proceedings {
     this._scroll(turn.prose);
   }
 
+  on_retry(event) {
+    // The seat was cut off mid-answer, refused or stalled, and is being asked again: what it wrote is void, the tools it ran stand.
+    const turn = this.turn(event.seat);
+    turn.thought?.remove();
+    turn.prose?.remove();
+    turn.thought = turn.thoughtText = turn.prose = null;
+    turn.streamed = false;
+    this._cut(turn);
+    turn.source.textContent = "asking again";
+    announce(`${SEAT[event.seat]?.name || event.seat} was cut off and is being asked again.`);
+  }
+
+  _cut(turn) {
+    // A tool the void run was still waiting on never reports back.
+    for (const chip of turn.el.querySelectorAll(".tool[data-state=running]")) {
+      chip.dataset.state = "cut";
+      chip.querySelector(".tool-stat").textContent = "cut off";
+    }
+  }
+
   on_tool_call(event) {
     const turn = this.turn(event.seat);
     const args = Object.entries(event.args || {}).map(([key, value]) => `${humanise(key)} ${value}`).join(", ");
@@ -375,6 +394,12 @@ export class Proceedings {
     turn.el.dataset.state = "done";
     turn.el.dataset.source = record.source;
     turn.source.textContent = sourceLabel(record);
+    this._cut(turn);
+    if (record.source !== "gemini") {
+      // Reasoning from a run that never answered is not how a standby brief reasoned.
+      turn.thought?.remove();
+      turn.thought = turn.thoughtText = null;
+    }
     turn.thought?.removeAttribute("open");
     if (turn.thought) turn.thought.querySelector("summary").textContent = "How it reasoned";
     const prose = this._prose(turn);
@@ -384,8 +409,12 @@ export class Proceedings {
       prose.textContent = text;
       if (!turn.streamed && !calm()) prose.classList.add("is-set");
     }
+    const instead = record.source === "template" ? "the desk wrote this note itself" : "this seat read its standby brief";
     if (record.error) {
-      turn.el.insertBefore(h("p.fallback", {}, `Gemini did not answer here (${record.error}), so this seat read its standby brief. The rest of the bench is unaffected.`), prose);
+      turn.el.insertBefore(h("p.fallback", {}, `Gemini did not answer here (${record.error}), so ${instead}.`), prose);
+    } else if (this.mode === "live" && (record.source === "standby" || record.source === "template")) {
+      // A live hearing skips the model for every seat after enough have failed.
+      turn.el.insertBefore(h("p.fallback", {}, `Earlier seats in this hearing failed, so ${instead} without asking Gemini.`), prose);
     }
     const body = h("div.turn-body");
     if (seat === "clerk") {

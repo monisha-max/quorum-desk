@@ -67,11 +67,12 @@ async function* frames(response) {
 /**
  * Convene a hearing and follow it to its seal. The server keeps sitting if the
  * connection drops, so a dropped stream re-attaches from the last event seen.
+ * `origin` is where to stream from when it is not this page's (see /api/config).
  */
-export async function hear(alertId, mode, onEvent, { signal } = {}) {
+export async function hear(alertId, mode, onEvent, { signal, origin = "" } = {}) {
   let response;
   try {
-    response = await fetch(`/api/alerts/${encodeURIComponent(alertId)}/hear`, {
+    response = await fetch(`${origin}/api/alerts/${encodeURIComponent(alertId)}/hear`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
@@ -98,7 +99,7 @@ export async function hear(alertId, mode, onEvent, { signal } = {}) {
     if (ended || !hearingId) break;
     await sleep(600 * (attempt + 1));
     try {
-      response = await fetch(`/api/hearings/${encodeURIComponent(hearingId)}/stream?start=${seen}`, { signal });
+      response = await fetch(`${origin}/api/hearings/${encodeURIComponent(hearingId)}/stream?start=${seen}`, { signal });
     } catch (error) {
       if (signal?.aborted) throw error;
       continue;

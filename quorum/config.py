@@ -52,13 +52,12 @@ def configure_gemini() -> str:
     return mode
 
 
-# Seats that gather and argue run on Flash. The magistrate runs on the strongest
-# model the backend offers; the AI Studio free tier does not serve Argon.
+# Every seat runs on Flash; the magistrate thinks hardest. Timed alone on four of
+# the docket's files, it reached the same dispositions as gemini-4-argon in
+# about 60% of the time, and inside a hearing Argon ran past the seat's limit.
+# QUORUM_JUDGE_MODEL puts another model on the bench.
 SEAT_MODEL = os.environ.get("QUORUM_MODEL", "gemini-3.8-flash")
-JUDGE_MODEL = os.environ.get(
-    "QUORUM_JUDGE_MODEL",
-    "gemini-4-argon" if gemini_mode() == "enterprise" else SEAT_MODEL,
-)
+JUDGE_MODEL = os.environ.get("QUORUM_JUDGE_MODEL", SEAT_MODEL)
 FAST_MODEL = os.environ.get("QUORUM_FAST_MODEL", "gemini-3.5-flash-lite")
 # Where a seat goes when its model is out of quota or down, in order.
 FALLBACK_MODELS = [
@@ -81,4 +80,12 @@ HEARINGS_PER_IP_PER_MINUTE = int(os.environ.get("QUORUM_IP_RATE", "6"))
 # The per-IP limit trusts X-Forwarded-For, which a client can forge; this one it cannot.
 HEARINGS_PER_MINUTE = int(os.environ.get("QUORUM_GLOBAL_RATE", "30"))
 UPLOADS_PER_FILE = int(os.environ.get("QUORUM_UPLOADS_PER_FILE", "5"))
+
+# Firebase Hosting buffers a response and ends it at 60 s, too soon for a live
+# hearing, so a page it serves streams hearings from Cloud Run directly: this
+# origin. The pages allowed to do that default to the project's Firebase sites.
+STREAM_ORIGIN = os.environ.get("QUORUM_STREAM_ORIGIN", "").rstrip("/")
+PAGE_ORIGINS = [origin.strip().rstrip("/") for origin in os.environ.get("QUORUM_PAGE_ORIGINS", "").split(",") if origin.strip()] or (
+    [f"https://{PROJECT}.web.app", f"https://{PROJECT}.firebaseapp.com"] if STREAM_ORIGIN and PROJECT else []
+)
 STREAM_MAX_PER_BURST = int(os.environ.get("QUORUM_STREAM_MAX", "160"))

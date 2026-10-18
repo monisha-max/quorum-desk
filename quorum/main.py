@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -33,6 +34,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Quorum", version="2.0.0", lifespan=lifespan)
+# Only the pages in config.PAGE_ORIGINS, which stream hearings from here rather than through Firebase Hosting.
+app.add_middleware(CORSMiddleware, allow_origins=config.PAGE_ORIGINS, allow_methods=["GET", "POST"],
+                   allow_headers=["Content-Type"], expose_headers=["X-Hearing-Id", "Retry-After"])
 
 
 # ---- live hearings: one producer, any number of followers ------------------
@@ -202,6 +206,8 @@ def desk_config() -> dict:
         "recorded": sorted(store.recorded_alerts()),
         "limits": {"concurrent": config.MAX_CONCURRENT_HEARINGS, "per_ip_per_minute": config.HEARINGS_PER_IP_PER_MINUTE},
         "host": "cloud-run" if os.environ.get("K_SERVICE") else "local",
+        "stream_origin": config.STREAM_ORIGIN,
+        "page_origins": config.PAGE_ORIGINS,
     }
 
 

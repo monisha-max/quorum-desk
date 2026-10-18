@@ -2,8 +2,8 @@
 
 It behaves like the real model at the ADK boundary: it reads the seat from the
 instruction and the file from the prompt, calls the seat's tools first, streams
-a thought and the JSON answer in chunks, and can be told to fail or stall for
-chosen seats.
+a thought and the JSON answer in chunks, and can be told to fail, stall, go
+quiet mid-stream or stream slowly for chosen seats.
 """
 
 from __future__ import annotations
@@ -52,6 +52,9 @@ class FakeGemini(BaseLlm):
     overrides: dict[str, dict] = {}
     tool_overrides: dict[str, list] = {}
     answer_as: dict[str, str] = {}  # seat -> the model_version its responses report, as after a failover
+    refuse: dict[str, int] = {}  # seat -> how many of its calls get a 429, partway through when streaming
+    hush: dict[str, int] = {}  # seat -> how many of its calls stream a thought and then nothing, as a stalled stream does
+    pace: dict[str, float] = {}  # seat -> seconds between its streamed chunks
     calls: list[str] = []
 
     @property
@@ -67,7 +70,18 @@ class FakeGemini(BaseLlm):
         self.calls.append(seat)
         if seat in self.fail:
             raise ModelDown()
+        if self.refuse.get(seat):
+            self.refuse[seat] -= 1
+            if stream:
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="Half a thought", thought=True)]), partial=True)
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text='{"argument": "half an answ')]), partial=True)
+            raise ModelDown()
         if seat in self.stall:
+            await asyncio.sleep(3600)
+        if self.hush.get(seat):
+            self.hush[seat] -= 1
+            if stream:
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="A thought, then silence", thought=True)]), partial=True)
             await asyncio.sleep(3600)
         prompt = "\n".join(part.text or "" for content in req.contents for part in content.parts or [] if content.role == "user")
         alert = get_alert(re.search(r"(?:ALERT|FILE) (HL-[\w-]+)", prompt).group(1))
@@ -86,6 +100,7 @@ class FakeGemini(BaseLlm):
         if stream:
             yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=thought, thought=True)]), partial=True)
             for start in range(0, len(text), 80):
+                await asyncio.sleep(self.pace.get(seat, 0))
                 yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text[start:start + 80])]), partial=True)
         yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=thought, thought=True), types.Part(text=text)]),
                           model_version=version)

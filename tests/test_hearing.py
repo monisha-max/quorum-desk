@@ -6,7 +6,7 @@ import json
 import pytest
 from fakes import FakeGemini
 
-from quorum import agents, hearing, store, warehouse
+from quorum import agents, hearing, store, warehouse, workflow
 
 
 def _convene(alert_id: str, requested: str = "auto", model=None):
@@ -57,6 +57,8 @@ def test_a_live_hearing_streams_reasoning_and_drafts():
         assert text == finals[seat][hearing.PROSE[seat]], seat
     ids = [event["id"] for event in events if event["type"] == "tool_call"]
     assert len(ids) == len(set(ids)) == 5
+    # A tool seat's later steps are the same run, so nothing is mistaken for a seat asked again.
+    assert not any(event["type"] == "retry" for event in events)
     # A fake model's hearing is never kept as a recording of Gemini.
     assert store.get_recording("HL-4402") is None
 
@@ -67,6 +69,51 @@ def test_a_seat_names_the_model_that_answered_it():
     assert store.get_hearing(record["id"])["seats"]["sentinel"]["model"] == "gemini-lite-after-failover"
     assert next(e for e in events if e["type"] == "seat" and e["seat"] == "sentinel")["model"] == "gemini-lite-after-failover"
     assert record["seats"]["counsel"]["model"] == agents.model_name("counsel")
+
+
+def test_a_seat_heard_again_starts_its_draft_over():
+    record, events = _convene("HL-4374", "live", FakeGemini(refuse={"prosecutor": 1}))
+    turn = [e for e in events if e.get("seat") == "prosecutor" and e["type"] in {"thought", "draft", "tool_call", "retry"}]
+    again = next(i for i, e in enumerate(turn) if e["type"] == "retry")
+    assert any(e["type"] == "draft" and "half an answ" in e["append"] for e in turn[:again])
+    redrafted = "".join(e["append"] for e in turn[again:] if e["type"] == "draft")
+    assert redrafted == record["seats"]["prosecutor"]["out"]["argument"]
+    assert record["seats"]["prosecutor"]["source"] == "gemini"
+
+
+def test_a_seat_refused_before_it_streamed_is_not_asked_again():
+    # The model chain has already tried every model by then; asking again would repeat it.
+    fake = FakeGemini(fail={"magistrate"})
+    record, events = _convene("HL-4429", "live", fake)
+    assert record["seats"]["magistrate"]["source"] == "standby" and fake.calls.count("magistrate") == 1
+    assert not any(event["type"] == "retry" for event in events)
+
+
+def test_a_seat_that_goes_quiet_is_asked_again(monkeypatch):
+    monkeypatch.setattr(workflow, "_SILENCE_S", 0.3)
+    fake = FakeGemini(hush={"magistrate": 1})
+    record, events = _convene("HL-4429", "live", fake)
+    assert record["seats"]["magistrate"]["source"] == "gemini" and record["seats"]["magistrate"]["error"] is None
+    assert fake.calls.count("magistrate") == 2
+    assert any(event["type"] == "retry" and event["seat"] == "magistrate" for event in events)
+
+
+def test_a_seat_quiet_twice_falls_back(monkeypatch):
+    monkeypatch.setattr(workflow, "_SILENCE_S", 0.3)
+    fake = FakeGemini(hush={"magistrate": 2})
+    record, _ = _convene("HL-4429", "live", fake)
+    assert record["seats"]["magistrate"]["source"] == "standby"
+    assert record["seats"]["magistrate"]["error"].startswith("Stalled")
+    assert fake.calls.count("magistrate") == 2
+
+
+def test_a_seat_that_streams_slowly_is_not_cut_off(monkeypatch):
+    monkeypatch.setattr(workflow, "_SILENCE_S", 0.3)
+    fake = FakeGemini(pace={"magistrate": 0.1})
+    record, _ = _convene("HL-4429", "live", fake)
+    assert record["seats"]["magistrate"]["source"] == "gemini" and fake.calls.count("magistrate") == 1
+    # It took longer in all than the silence that would have cut it off.
+    assert record["seats"]["magistrate"]["ms"] > 300
 
 
 def test_the_audit_chain_verifies_and_catches_an_edit():

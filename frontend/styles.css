@@ -367,6 +367,7 @@ textarea { resize: vertical; }
 .banner[data-mode=live] { border-color: var(--clear); }
 .banner[data-mode=replay] { border-color: var(--escalate); }
 .banner[data-mode=standby] { border-color: var(--hold); }
+.banner-clock { font: 500 12.5px var(--mono); font-variant-numeric: tabular-nums; color: var(--chalk); }
 
 .tabs { display: flex; gap: 22px; margin-top: 26px; border-bottom: 1px solid var(--bench-line); }
 .tabs [role=tab] {

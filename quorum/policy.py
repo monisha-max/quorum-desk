@@ -73,7 +73,8 @@ POLICIES = [
             "When a password reset from a device we have not seen, a SIM change, and a new payee fall "
             "inside 24 hours, hold outgoing payments and suspend digital access. Contact the customer "
             "on the number and channel held before the change, never through the new SIM. Reverse "
-            "payments still inside Harbourline."
+            "payments still inside Harbourline. File a suspicious matter when the new payee's account "
+            "was opened within 30 days or has received funds from other customers."
         ),
         "tags": "takeover sim swap device password reset login otp new payee night",
     },
@@ -136,7 +137,8 @@ POLICIES = [
             "Refer a claim to investigation when two repair invoices share line items and "
             "near-sequential numbers, when image circumstances contradict the stated time of loss, or "
             "when a prior claim overlaps the same damage. Do not deny the claim in the customer "
-            "message. Say it is with a reviewer and name the claim number."
+            "message. Say it is with a reviewer and name the claim number. Hold the payout while it is "
+            "investigated; a claim referral on its own is not a suspicious matter."
         ),
         "tags": "insurance claim motor repair invoice photo garage workshop",
     },
@@ -177,7 +179,9 @@ def search_policy(query: str, tool_context: ToolContext = None) -> dict:
     hits = rank(query)
     if tool_context is not None:
         for policy in hits:
-            tool_context.state[f"evidence:{policy['id']}"] = {"tool": "search_policy", "summary": {"title": policy["title"]}}
+            # The text too: the advocates and the Magistrate read the policy itself, not only the Statute's account of it.
+            tool_context.state[f"evidence:{policy['id']}"] = {"tool": "search_policy",
+                                                              "summary": {"title": policy["title"], "text": policy["text"]}}
     return {
         "ref": f"policy:{query[:40]}",
         "tool": "search_policy",

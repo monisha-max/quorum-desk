@@ -433,6 +433,7 @@ STANDBY: dict[str, dict] = {
             "facts": [
                 _f("Refer on shared line items with near-sequential numbers, contradicted image circumstances, or overlapping prior damage.", "INS-07"),
                 _f("Do not deny the claim in the customer message; say it is with a reviewer and name the claim number.", "INS-07"),
+                _f("Hold the payout while it is investigated; a claim referral on its own is not a suspicious matter.", "INS-07"),
             ],
             "leans": "concerning",
             "policy_ids": ["INS-07"],
@@ -680,6 +681,7 @@ STANDBY: dict[str, dict] = {
             "finding": "FC-27: a new device, a SIM change and a new payee inside 24 hours require holding outgoing payments, suspending digital access, and contacting the customer on the number held before the change. FC-60 applies to the payee account.",
             "facts": [
                 _f("Hold payments, suspend digital access, and never contact the customer through the new SIM.", "FC-27"),
+                _f("File a suspicious matter when the new payee's account was opened within 30 days or has received funds from other customers.", "FC-27"),
                 _f("Restrict a collection account and link every file that pays it.", "FC-60"),
             ],
             "leans": "concerning",

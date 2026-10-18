@@ -131,3 +131,22 @@ def test_config_reports_where_the_desk_runs(client):
     assert desk["gemini"] == "none" and desk["store"] == "file" and desk["engine"] == "sqlite mirror"
     assert set(desk["models"]) >= {"clerk", "magistrate", "liaison"}
     assert client.get("/healthz").json() == {"ok": True}
+
+
+def test_only_the_desk_s_own_pages_may_stream_a_hearing_from_another_origin(client):
+    # The middleware holds this list, so the test extends it in place rather than replacing it.
+    config.PAGE_ORIGINS.append("https://desk.web.app")
+    asked = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"}
+    try:
+        preflight = client.options("/api/alerts/HL-4402/hear", headers={"Origin": "https://desk.web.app", **asked})
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == "https://desk.web.app"
+        with client.stream("POST", "/api/alerts/HL-4402/hear", json={"mode": "standby"}, headers={"Origin": "https://desk.web.app"}) as response:
+            assert response.headers["access-control-allow-origin"] == "https://desk.web.app"
+            assert "X-Hearing-Id" in response.headers["access-control-expose-headers"]
+            response.read()
+        assert client.options("/api/alerts/HL-4402/hear", headers={"Origin": "https://elsewhere.example", **asked}).status_code == 400
+        # The page reads the list here and streams from elsewhere only if its own origin is on it (app.js).
+        assert "https://desk.web.app" in client.get("/api/config").json()["page_origins"]
+    finally:
+        config.PAGE_ORIGINS.remove("https://desk.web.app")
